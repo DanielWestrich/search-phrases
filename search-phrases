@@ -1,0 +1,185 @@
+/* Title: search_phrases.cpp
+ * By: Daniel Westrich, Fall 2016
+ * Purpose: To iterate through the FSTree
+ */
+
+#include <iostream>
+#include <vector>
+#include <stack>
+#include <fstream>
+#include <string>
+#include <set>
+
+#include "runProgram.h"
+
+using namespace std;
+
+/* Constructor */
+Gerp::Gerp(string root, string sensitivity)
+{
+        numFiles = 0;
+        FSTree mainTree(root);
+        build(mainTree.getRoot(), mainTree, sensitivity);
+}
+
+/* Destructor */
+Gerp::~Gerp()
+{
+        for (size_t i = 0; i < fileVec.size(); i++) {
+                delete fileVec[i];
+        }
+}
+
+/* Name: build()
+ * Arguments: A DirNode pointer, An FSTree address
+ * Returns: None
+ *
+ * Note:
+ *      This function iterates through the FSTree, calling helper functions
+ *	to open each file and hashing its contents.
+ */
+void Gerp::build(DirNode *node, FSTree &tree, string sensitivity)
+{
+        if (node->isEmpty()) {
+                return;
+        }
+        if (node->hasFiles()) {
+                for (int i = 0; i < node->numFiles(); i++) {
+                        string path = getPath(node, tree);
+			path += node->getFile(i);
+		        HashTable *newHashTable = new HashTable(path);
+
+                        fileVec.push_back(newHashTable);
+			
+			read_from_file(path, newHashTable, sensitivity);
+			numFiles++;
+                }
+        }
+
+        if (node->hasSubDir()) {
+                for (int i = 0; i < node->numSubDirs(); i++) {
+                        build(node->getSubDir(i), tree, sensitivity);
+                }
+        }
+}
+
+/* Name: getPath()
+ * Arguments: A DirNode pointer, An FSTree address
+ * Returns: A string  variable
+ *
+ * Note:
+ *      This function returns the path of a given file. It does this by
+ *      iterating through each parent directory of the file, and pushing
+ *      the name of each parent onto the vector. However, at this point
+ *      the path is in reverse order, and so it is printed in opposite order.
+ */
+string Gerp::getPath(DirNode *node, FSTree &tree)
+{
+        string filePath;
+        
+        // push directory names onto stack, then print in reverse order
+        stack<string> pathStack;
+
+        filePath += tree.getRoot()->getName(); // Push root name
+
+        while (node != tree.getRoot()) { // push directories onto stack
+                pathStack.push(node->getName());
+                pathStack.push("/");
+                node = node->getParent();
+        }
+        
+        int stackSize = pathStack.size();
+        for (int i = 0; i < stackSize; i++) { // Print items on stack
+                filePath += pathStack.top();
+                pathStack.pop();                
+        }
+
+        filePath += "/";
+
+	return filePath;
+}
+
+/* Name: search()
+ * Arguments: A string variable
+ * Returns: None
+ *
+ * Note:
+ *      This function is accessed by main.cpp and is used to search for lines
+ *      where a given key exists.
+ */
+void Gerp::search(string key)
+{
+        bool found = false;
+        for (int i = 0; i < numFiles; i++) {
+                if (fileVec[i]->search(key)) {
+                        fileVec[i]->printResults(key);
+                        found = true;
+                }
+        }
+        if (not found) {
+                cout << key << " Not Found. Try with @insensitive"
+                        << " or @i." << endl;
+        }
+}
+
+bool Gerp::checkDuplicate(string word, vector<string> wordVec)
+{
+        bool duplicate = false;
+        for (size_t i = 0; i < wordVec.size(); i++) {
+                if (wordVec[i] == word) {
+                        duplicate = true;
+                        break;
+                }
+        }
+        return duplicate;
+}
+
+/* Name: read_from_file()
+ * Arguments: A string variable, A HashTable pointer
+ * Returns: None
+ *
+ * Note:
+ *      This function reads in and parses each file individually. It
+ * 	accesses an instance of the HashTable class itself, rather than
+ * 	returning anything.
+ */
+void Gerp::read_from_file(string filename, HashTable *HashT, string sensitivity)
+{
+        ifstream file;
+        file.open(filename);
+        if (not file.is_open()) {
+                cerr << "Cannot open file" << endl;
+                exit(1);
+        } else {
+                int lineNum = 1;
+                string line;
+		string word;
+                set<string> lineSet;
+                set<string>::iterator iter; 
+                vector<string> lineVec;
+		while (getline(file, line)) {
+			for (size_t i = 0; i < line.size(); i++) {
+                                if (not isspace(line[i])) {
+                                        if(sensitivity == "insensitive"){
+                                                line[i] = tolower(line[i]);
+                                        }
+					word += line[i];
+				}
+                                if ((isspace(line[i]) or i == line.size()-1) 
+                                        and (i > 0 and not isspace(line[i-1]))) {
+                                        lineVec.push_back(word);
+                                        lineSet.insert(word);           
+					word.erase();
+				}
+			}
+			for (iter = lineSet.begin(); iter != lineSet.end(); 
+                                        iter++) {
+                                HashT->addString(*iter, lineNum, lineVec);
+			}
+			lineVec.clear();
+                        lineSet.clear();
+                        lineNum++;
+                }
+                file.close();
+        }
+}
